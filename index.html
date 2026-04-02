@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Editor A4 Markdown Pro + Sheets</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://unpkg.com/turndown/dist/turndown.js"></script>
+    <script src="https://unpkg.com/turndown-plugin-gfm/dist/turndown-plugin-gfm.js"></script>
+
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
+        body { height: 100vh; display: flex; flex-direction: column; background-color: #f1f5f9; overflow: hidden; }
+
+        header { background-color: #ffffff; padding: 1rem 2rem; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; z-index: 10; }
+        .btn { background: #e2e8f0; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-weight: 600; color: #475569; transition: 0.2s; }
+        .btn:hover { background: #cbd5e1; }
+
+        /* Toolbar Restabelecida por Completo */
+        .toolbar { display: flex; gap: 6px; align-items: center; padding: 8px 2rem; background: #f8fafc; border-bottom: 1px solid #e2e8f0; z-index: 9; flex-wrap: wrap; }
+        .tool-btn { background: white; border: 1px solid #cbd5e1; padding: 6px 10px; border-radius: 4px; cursor: pointer; font-weight: 600; color: #334155; transition: 0.2s; font-size: 13px; }
+        .tool-btn:hover { background: #e2e8f0; }
+        .separator { color: #cbd5e1; margin: 0 4px; font-weight: 300; }
+        input[type="color"] { border: none; width: 26px; height: 26px; cursor: pointer; background: transparent; padding: 0; border-radius: 4px; }
+        .btn-primary { background: #3b82f6; color: white; border-color: #2563eb; }
+        .btn-primary:hover { background: #2563eb; }
+
+        main { flex: 1; display: flex; overflow: hidden; }
+        
+        /* O Novo Editor de Código Inteligente */
+        #editor-pane { width: 50%; display: flex; flex-direction: column; background-color: #1e293b; border-right: 1px solid #334155; transition: width 0.3s; }
+        .pane-header { background: #0f172a; color: #94a3b8; padding: 8px 16px; font-size: 12px; font-weight: bold; letter-spacing: 1px; display: flex; justify-content: space-between; align-items: center;}
+        .copy-btn { background: #334155; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px; text-transform: uppercase; }
+        .copy-btn:hover { background: #475569; }
+        
+        #md-input { 
+            flex: 1; background: transparent; border: none; color: #e2e8f0; padding: 2rem; 
+            font-family: monospace; font-size: 14px; line-height: 1.6; outline: none; 
+            overflow-y: auto; white-space: pre-wrap; word-break: break-word;
+        }
+
+        /* A "Pílula" Mágica do Base64 Comprimido */
+        .b64-pill {
+            color: #3b82f6;
+            text-decoration: underline;
+            cursor: pointer;
+            font-family: monospace;
+            user-select: none; /* Evita que o usuário tente apagar metade do link */
+        }
+        .b64-pill:hover {
+            color: #2563eb;
+        }
+
+        /* Área Visual A4 */
+        #preview-pane { flex: 1; background-color: #e2e8f0; overflow-y: auto; display: flex; flex-direction: column; align-items: center; padding: 2rem; gap: 2rem; scroll-behavior: smooth; }
+        .a4-page { width: 794px; min-height: 1123px; background: white; box-shadow: 0 10px 25px rgba(0,0,0,0.1); position: relative; padding: 96px; display: flex; flex-direction: column; }
+        .page-header { position: absolute; top: 32px; left: 96px; right: 96px; display: flex; justify-content: space-between; font-size: 12px; color: #94a3b8; border-bottom: 1px solid #f1f5f9; padding-bottom: 8px; }
+        .page-footer { position: absolute; bottom: 32px; left: 96px; right: 96px; text-align: center; font-size: 12px; color: #94a3b8; border-top: 1px solid #f1f5f9; padding-top: 8px; }
+
+        /* Estilos Internos Renderizados */
+        .page-content { flex: 1; outline: none; color: #334155; line-height: 1.6; display: flow-root; } 
+        .page-content h1 { font-size: 2.2em; margin-bottom: 1rem; border-bottom: 2px solid #e2e8f0; padding-bottom: 5px;}
+        .page-content h2 { font-size: 1.6em; margin-top: 1.5rem; margin-bottom: 0.5rem; }
+        .page-content h3 { font-size: 1.2em; margin-top: 1.2rem; }
+        .page-content p { margin-bottom: 1rem; }
+        .page-content blockquote { border-left: 4px solid #cbd5e1; padding-left: 1rem; color: #64748b; font-style: italic; margin: 1rem 0; background: #f8fafc; padding: 10px; }
+        .page-content pre { background: #1e293b; color: #f8fafc; padding: 1rem; border-radius: 6px; overflow-x: auto; margin: 1rem 0; font-family: monospace; }
+        .page-content code { background: #e2e8f0; padding: 2px 4px; border-radius: 4px; font-family: monospace; font-size: 0.9em; color: #ef4444; }
+        .page-content ul { margin-left: 1.5rem; margin-bottom: 1rem; list-style-type: disc; }
+        .page-content ol { margin-left: 1.5rem; margin-bottom: 1rem; list-style-type: decimal; }
+        .page-content hr { border: 0; border-top: 2px solid #e2e8f0; margin: 2rem 0; }
+
+        /* Tabelas Avançadas (Sheets) */
+        .page-content table { width: 100%; border-collapse: collapse; margin: 1.5rem 0; font-size: 0.95em; table-layout: fixed; }
+        .page-content th, .page-content td { border: 1px solid #cbd5e1; padding: 10px; text-align: left; position: relative; word-wrap: break-word; transition: outline 0.1s; }
+        .page-content th { background-color: #f1f5f9; font-weight: 600; color: #0f172a; }
+        .active-cell { outline: 2px solid #3b82f6; outline-offset: -2px; z-index: 5; } 
+
+        /* Imagens */
+        .page-content img { max-width: 100%; height: auto; border-radius: 6px; outline: 2px solid transparent; transition: outline 0.2s; cursor: pointer; }
+        .page-content img:hover { outline: 2px dashed #3b82f6; }
+        .page-content img.active-img { outline: 3px solid #3b82f6; }
+        .page-content img[align="left"] { float: left; margin: 0.5rem 1rem 1rem 0; }
+        .page-content img[align="right"] { float: right; margin: 0.5rem 0 1rem 1rem; }
+        .page-content img:not([align="left"]):not([align="right"]) { display: block; margin: 1rem auto; }
+
+        /* Tooltips Flutuantes UI */
+        .floating-tooltip {
+            position: fixed; background: #1e293b; color: white; padding: 6px 10px; border-radius: 6px;
+            display: flex; align-items: center; gap: 10px; font-size: 12px; font-weight: 600;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3); z-index: 100; transition: opacity 0.2s;
+        }
+        .floating-tooltip input[type="range"] { width: 80px; cursor: pointer; }
+        .float-btn { background: #334155; border: 1px solid #475569; color: white; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; display: flex; align-items: center; gap: 4px;}
+        .float-btn:hover { background: #475569; }
+        .color-picker-wrapper { display: flex; align-items: center; gap: 4px; border: 1px solid #475569; padding: 2px 6px; border-radius: 4px; background: #334155; }
+        .color-picker-wrapper span { font-size: 14px; }
+
+        #measure-container { position: absolute; top: -9999px; left: -9999px; width: 602px; visibility: hidden; pointer-events: none; }
+        .hidden { display: none !important; opacity: 0; pointer-events: none; }
+
+        @media print {
+            header, .toolbar, #editor-pane, .page-header, .page-footer, .floating-tooltip { display: none !important; }
+            body, main { background: white !important; overflow: visible !important; height: auto !important; }
+            #preview-pane { background: white !important; padding: 0 !important; margin: 0 !important; overflow: visible !important; display: block !important; width: 100% !important; }
+            .a4-page { margin: 0 !important; box-shadow: none !important; border: none !important; width: 100% !important; height: 100% !important; page-break-after: always !important; }
+            .active-cell, .active-img { outline: none !important; }
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h2>📝 Editor A4 Markdown Pro + Sheets</h2>
+        <button class="btn" id="toggle-view">Modo Foco Visual</button>
+    </header>
+
+    <div class="toolbar">
+        <button class="tool-btn" onclick="formatBlock('H1')" title="Título 1">H1</button>
+        <button class="tool-btn" onclick="formatBlock('H2')" title="Título 2">H2</button>
+        <button class="tool-btn" onclick="formatBlock('H3')" title="Título 3">H3</button>
+        <span class="separator">|</span>
+        <button class="tool-btn" onclick="formatText('bold')" title="Negrito"><b>B</b></button>
+        <button class="tool-btn" onclick="formatText('italic')" title="Itálico"><i>I</i></button>
+        <button class="tool-btn" onclick="formatText('strikeThrough')" title="Riscado"><s>S</s></button>
+        <input type="color" onchange="formatText('foreColor', this.value)" title="Cor do Texto" style="border: 1px solid #cbd5e1; padding: 0;">
+        <span class="separator">|</span>
+        <button class="tool-btn" onclick="formatText('insertUnorderedList')" title="Lista">● Lista</button>
+        <button class="tool-btn" onclick="formatText('insertOrderedList')" title="Lista Numerada">1. Lista</button>
+        <button class="tool-btn" onclick="insertCustomHTML('<blockquote>Sua citação aqui...</blockquote>')" title="Citação">❞ Citação</button>
+        <button class="tool-btn" onclick="insertCustomHTML('<pre><code>// Seu código aqui</code></pre>')" title="Bloco de Código">&lt;/&gt; Código</button>
+        <button class="tool-btn" onclick="formatText('insertHorizontalRule')" title="Linha Separadora">― Linha</button>
+        <span class="separator">|</span>
+        <button class="tool-btn" onclick="insertTable()" title="Inserir Tabela" style="background: #e0f2fe; border-color: #bae6fd;">📊 Tabela</button>
+        <span class="separator">|</span>
+        <button class="tool-btn" onclick="insertLink()" title="Inserir Link">🔗 Link</button>
+        <button class="tool-btn" onclick="insertImageURL()" title="Inserir Imagem via URL">🌐 Img (URL)</button>
+        <button class="tool-btn" onclick="document.getElementById('img-upload').click()" title="Fazer Upload de Imagem">📁 Img (PC)</button>
+        <input type="file" id="img-upload" hidden accept="image/*" onchange="uploadImage(this)">
+        
+        <span style="flex: 1;"></span>
+        <button class="tool-btn btn-primary" onclick="window.print()" title="Imprimir / PDF">🖨️ Imprimir</button>
+    </div>
+
+    <main>
+        <div id="editor-pane">
+            <div class="pane-header">
+                <span>MARKDOWN SOURCE (Base64 Collapsible)</span>
+                <button class="copy-btn" onclick="copyMarkdown()">📋 Copiar RAW MD</button>
+            </div>
+            <div id="md-input" contenteditable="true" spellcheck="false"></div>
+        </div>
+
+        <div id="preview-pane">
+            <div id="a4-pages-container"></div>
+        </div>
+    </main>
+
+    <div id="img-tooltip" class="floating-tooltip hidden">
+        <span>Tamanho:</span>
+        <input type="range" id="resizer-slider" min="10" max="100" value="100">
+        <span id="resizer-label" style="width: 35px;">100%</span>
+        <span style="color: #475569;">|</span>
+        <button class="float-btn" onclick="alignImage('left')">[<]</button>
+        <button class="float-btn" onclick="alignImage('center')">[=]</button>
+        <button class="float-btn" onclick="alignImage('right')">[>]</button>
+    </div>
+
+    <div id="table-tooltip" class="floating-tooltip hidden">
+        <div class="color-picker-wrapper" title="Cor de Fundo da Célula">
+            <span>🪣</span>
+            <input type="color" id="cell-bg-picker" onchange="styleCell('backgroundColor', this.value)">
+        </div>
+        <div class="color-picker-wrapper" title="Cor do Texto">
+            <span>A</span>
+            <input type="color" id="cell-text-picker" onchange="styleCell('color', this.value)">
+        </div>
+        <select class="float-btn" onchange="styleCell('fontSize', this.value)" style="height: 32px; outline: none;">
+            <option value="">Tamanho</option>
+            <option value="12px">12px</option>
+            <option value="14px">14px</option>
+            <option value="16px">16px</option>
+            <option value="18px">18px</option>
+            <option value="20px">20px</option>
+        </select>
+        <span style="color: #475569;">|</span>
+        <button class="float-btn" onclick="modifyTable('addRow')" title="Adicionar Linha Abaixo">+ 📄</button>
+        <button class="float-btn" onclick="modifyTable('addCol')" title="Adicionar Coluna à Direita">+ 🗂️</button>
+        <button class="float-btn" onclick="styleCell('clear', null)" title="Limpar Estilos" style="color: #ef4444;">🚫</button>
+    </div>
+
+    <div id="measure-container" class="page-content"></div>
+
+    <script>
+        const A4_HEIGHT_PX = 1123;
+        const MARGIN_PX = 96; 
+        const MAX_CONTENT_HEIGHT = A4_HEIGHT_PX - (MARGIN_PX * 2);
+
+        const mdInput = document.getElementById('md-input');
+        const measureContainer = document.getElementById('measure-container');
+        const pagesContainer = document.getElementById('a4-pages-container');
+
+        const turndownService = new window.TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
+        turndownService.use(window.turndownPluginGfm.gfm);
+
+        // REGRA 1: Tabela Avançada
+        turndownService.addRule('styled-tables', {
+            filter: function (node) {
+                if (node.nodeName !== 'TABLE') return false;
+                return node.hasAttribute('style') || node.querySelector('[style]');
+            },
+            replacement: function (content, node) {
+                const clone = node.cloneNode(true);
+                clone.querySelectorAll('.active-cell').forEach(el => el.classList.remove('active-cell'));
+                return '\n\n' + clone.outerHTML + '\n\n';
+            }
+        });
+
+        // REGRA 2: Imagens com Estilo (Preserva o Base64 real no Markdown)
+        turndownService.addRule('smart-images', {
+            filter: 'img',
+            replacement: function (content, node) {
+                const src = node.getAttribute('src') || '';
+                const alt = node.alt || 'Imagem';
+                const width = node.style.width;
+                const align = node.getAttribute('align');
+
+                // Se a imagem foi redimensionada ou alinhada, força a tag HTML
+                if ((width && width !== '100%') || align) {
+                    const wAttr = width ? ` style="width: ${width};"` : '';
+                    const aAttr = align ? ` align="${align}"` : '';
+                    return `<img src="${src}" alt="${alt}"${wAttr}${aAttr}>`;
+                }
+                return `![${alt}](${src})`;
+            }
+        });
+
+        let isSyncing = false;
+
+        // --- Ferramentas Toolbar ---
+        function formatText(command, value = null) { document.execCommand(command, false, value); syncVisualToMarkdown(); }
+        function formatBlock(tag) { document.execCommand('formatBlock', false, tag); syncVisualToMarkdown(); }
+        function insertCustomHTML(htmlString) { document.execCommand('insertHTML', false, htmlString + '<p><br></p>'); syncVisualToMarkdown(); }
+        function insertLink() { const url = prompt("URL do link:"); if (url) formatText('createLink', url); }
+        function insertImageURL() { const url = prompt("URL da imagem:"); if (url) { formatText('insertImage', url); setTimeout(() => updatePages(true), 100); } }
+        function uploadImage(inputElem) {
+            const file = inputElem.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) { formatText('insertImage', e.target.result); inputElem.value = ''; setTimeout(() => updatePages(true), 100); };
+            reader.readAsDataURL(file);
+        }
+
+        // Evita formatação rica indesejada ao colar texto direto no painel de código
+        mdInput.addEventListener('paste', function(e) {
+            e.preventDefault();
+            const text = (e.originalEvent || e).clipboardData.getData('text/plain');
+            document.execCommand('insertText', false, text);
+        });
+
+        // Copiar o Markdown "Descomprimido" com segurança
+        function copyMarkdown() {
+            const md = getRawMarkdown();
+            navigator.clipboard.writeText(md);
+            alert('Markdown RAW copiado com sucesso (incluindo todo o Base64)!');
+        }
+
+        // --- LÓGICA GOOGLE SHEETS (MENU FLUTUANTE E ARRASTE) ---
+        function insertTable() {
+            const tableHTML = `<table style="width: 100%;"><tbody><tr><th>Cabeçalho 1</th><th>Cabeçalho 2</th></tr><tr><td>Dado 1</td><td>Dado 2</td></tr></tbody></table>`;
+            insertCustomHTML(tableHTML);
+        }
+
+        let activeCell = null;
+        let activeImage = null;
+        
+        const tableTooltip = document.getElementById('table-tooltip');
+        const imgTooltip = document.getElementById('img-tooltip');
+
+        pagesContainer.addEventListener('click', (e) => {
+            const cell = e.target.closest('td, th');
+            if (cell) {
+                if (activeImage) closeImageMenu();
+                if (activeCell) activeCell.classList.remove('active-cell');
+                activeCell = cell; activeCell.classList.add('active-cell');
+                
+                const rect = activeCell.getBoundingClientRect();
+                tableTooltip.classList.remove('hidden');
+                tableTooltip.style.top = (rect.top - 50) + 'px';
+                tableTooltip.style.left = rect.left + 'px';
+            } 
+            else if (e.target.tagName === 'IMG') {
+                if (activeCell) closeTableMenu();
+                if (activeImage) activeImage.classList.remove('active-img');
+                activeImage = e.target; activeImage.classList.add('active-img');
+                
+                const rect = activeImage.getBoundingClientRect();
+                imgTooltip.classList.remove('hidden');
+                imgTooltip.style.top = (rect.top - 50) + 'px';
+                imgTooltip.style.left = rect.left + 'px';
+                
+                const currentWidth = activeImage.style.width ? parseInt(activeImage.style.width) : 100;
+                document.getElementById('resizer-slider').value = currentWidth; 
+                document.getElementById('resizer-label').innerText = currentWidth + '%';
+            } 
+            else if (!e.target.closest('.floating-tooltip')) {
+                closeTableMenu(); closeImageMenu();
+            }
+        });
+
+        function closeTableMenu() { tableTooltip.classList.add('hidden'); if (activeCell) activeCell.classList.remove('active-cell'); activeCell = null; }
+        function closeImageMenu() { imgTooltip.classList.add('hidden'); if (activeImage) activeImage.classList.remove('active-img'); activeImage = null; }
+        pagesContainer.addEventListener('scroll', () => { closeTableMenu(); closeImageMenu(); });
+
+        function styleCell(property, value) {
+            if (!activeCell) return;
+            if (property === 'clear') activeCell.removeAttribute('style');
+            else activeCell.style[property] = value;
+            syncVisualToMarkdown();
+        }
+
+        function modifyTable(action) {
+            if (!activeCell) return;
+            const table = activeCell.closest('table');
+            const row = activeCell.closest('tr');
+            const cellIndex = Array.from(row.children).indexOf(activeCell);
+
+            if (action === 'addRow') {
+                const newRow = row.cloneNode(true);
+                Array.from(newRow.children).forEach(c => { c.innerHTML = '<br>'; c.removeAttribute('style'); });
+                row.parentNode.insertBefore(newRow, row.nextSibling);
+            } 
+            else if (action === 'addCol') {
+                Array.from(table.rows).forEach(tr => {
+                    const newCell = tr.children[cellIndex].cloneNode(true);
+                    newCell.innerHTML = '<br>'; newCell.removeAttribute('style');
+                    tr.insertBefore(newCell, tr.children[cellIndex].nextSibling);
+                });
+            }
+            syncVisualToMarkdown(); updatePages(false); closeTableMenu(); 
+        }
+
+        // Arrastar Bordas da Tabela
+        let isResizing = false, resizeDir = '', currentElement = null, startX, startY, startWidth, startHeight;
+
+        pagesContainer.addEventListener('mousemove', function(e) {
+            if (!isResizing && (e.target.tagName === 'TH' || e.target.tagName === 'TD')) {
+                const rect = e.target.getBoundingClientRect();
+                const rightEdge = e.clientX > rect.right - 8;
+                const bottomEdge = e.clientY > rect.bottom - 8;
+                if (rightEdge && bottomEdge) e.target.style.cursor = 'nwse-resize';
+                else if (rightEdge) e.target.style.cursor = 'col-resize';
+                else if (bottomEdge) e.target.style.cursor = 'row-resize';
+                else e.target.style.cursor = 'text';
+            }
+            if (isResizing && currentElement) {
+                if (resizeDir === 'col' || resizeDir === 'both') currentElement.style.width = startWidth + (e.clientX - startX) + 'px';
+                if (resizeDir === 'row' || resizeDir === 'both') currentElement.style.height = startHeight + (e.clientY - startY) + 'px';
+            }
+        });
+
+        pagesContainer.addEventListener('mousedown', function(e) {
+            const cell = e.target.closest('td, th');
+            if (cell) {
+                const rect = cell.getBoundingClientRect();
+                const rightEdge = e.clientX > rect.right - 8;
+                const bottomEdge = e.clientY > rect.bottom - 8;
+                if (rightEdge || bottomEdge) {
+                    isResizing = true; currentElement = cell;
+                    startX = e.clientX; startY = e.clientY;
+                    startWidth = currentElement.offsetWidth; startHeight = currentElement.offsetHeight;
+                    if (rightEdge && bottomEdge) resizeDir = 'both'; else if (rightEdge) resizeDir = 'col'; else if (bottomEdge) resizeDir = 'row';
+                    e.preventDefault();
+                }
+            }
+        });
+
+        window.addEventListener('mouseup', function(e) {
+            if (isResizing) { isResizing = false; currentElement = null; syncVisualToMarkdown(); updatePages(false); }
+        });
+
+        // Eventos de Imagem
+        const slider = document.getElementById('resizer-slider');
+        slider.addEventListener('input', (e) => { if (activeImage) { activeImage.style.width = e.target.value + '%'; document.getElementById('resizer-label').innerText = e.target.value + '%'; } });
+        slider.addEventListener('change', (e) => { if (activeImage) { syncVisualToMarkdown(); updatePages(true); closeImageMenu(); } });
+        
+        function alignImage(position) {
+            if (!activeImage) return;
+            if (position === 'left' || position === 'right') activeImage.setAttribute('align', position);
+            else activeImage.removeAttribute('align');
+            syncVisualToMarkdown(); updatePages(true); closeImageMenu();
+        }
+
+        // --- Core Sincronização e Paginador ---
+        function getOuterHeight(el) {
+            if (el.nodeType !== Node.ELEMENT_NODE) return 24; 
+            const style = window.getComputedStyle(el);
+            return el.offsetHeight + (parseFloat(style.marginTop)||0) + (parseFloat(style.marginBottom)||0);
+        }
+
+        // LÓGICA DO TEXTO PURO (Lê o código da DIV editável sem quebrar o HTML interno)
+        function getRawMarkdown() {
+            const tempDiv = document.createElement('div');
+            tempDiv.innerHTML = mdInput.innerHTML;
+            
+            // 1. Descomprime as pílulas transformando-as de volta na string base64 pura
+            tempDiv.querySelectorAll('.b64-pill').forEach(pill => {
+                pill.parentNode.replaceChild(document.createTextNode(pill.getAttribute('data-base64')), pill);
+            });
+
+            // 2. Converte as quebras de linha que o navegador cria (div/br) para \n
+            let html = tempDiv.innerHTML;
+            html = html.replace(/<div><br><\/div>/gi, '\n');
+            html = html.replace(/<div[^>]*>/gi, '\n').replace(/<\/div>/gi, '');
+            html = html.replace(/<br\s*\/?>/gi, '\n');
+            html = html.replace(/&nbsp;/gi, ' ');
+
+            // 3. Desfaz o escape de entidades (&lt; -> <)
+            const txt = document.createElement('textarea');
+            txt.innerHTML = html;
+            return txt.value;
+        }
+
+        // DE VISUAL PARA CÓDIGO
+        function syncVisualToMarkdown() {
+            if (isSyncing) return;
+            isSyncing = true;
+            
+            const allContentDivs = document.querySelectorAll('.page-content:not(#measure-container)');
+            let fullHtml = '';
+            allContentDivs.forEach(div => { fullHtml += div.innerHTML + '<br>'; });
+            
+            // Pega o Markdown Limpo
+            let md = turndownService.turndown(fullHtml);
+            
+            // Escapa as tags HTML para que fiquem visíveis como texto na div
+            md = md.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+            
+            // A MÁGICA DA PÍLULA: Procura a string base64 e substitui pelo botão HTML interativo!
+            md = md.replace(/(data:image\/[^;]+;base64,)([a-zA-Z0-9+/=]+)/g, function(match, prefix, data) {
+                return `<span class="b64-pill" contenteditable="false" data-base64="${match}" title="Imagem em Base64">Base64</span>`;
+            });
+            
+            // Converte \n para <br> para a div exibir corretamente
+            mdInput.innerHTML = md.replace(/\n/g, '<br>');
+            
+            isSyncing = false;
+        }
+
+        // DE CÓDIGO PARA VISUAL
+        function updatePages(focusLastPage = false) {
+            if (isSyncing) return;
+            isSyncing = true;
+            
+            const rawMarkdown = getRawMarkdown();
+            let rawHtml = marked.parse(rawMarkdown);
+
+            measureContainer.innerHTML = rawHtml;
+            const pages = []; let currentPageContent = []; let currentHeight = 0;
+
+            Array.from(measureContainer.childNodes).forEach(node => {
+                if (node.nodeType === Node.TEXT_NODE && node.textContent.trim() === '') return;
+                const nodeHeight = getOuterHeight(node); 
+                if (currentHeight + nodeHeight > MAX_CONTENT_HEIGHT && currentPageContent.length > 0) {
+                    pages.push(currentPageContent.join('')); currentPageContent = []; currentHeight = 0;
+                }
+                currentPageContent.push(node.nodeType === Node.TEXT_NODE ? node.textContent : node.outerHTML);
+                currentHeight += nodeHeight;
+            });
+
+            if (currentPageContent.length > 0) pages.push(currentPageContent.join(''));
+            renderA4Pages(pages, focusLastPage);
+            isSyncing = false;
+        }
+
+        function renderA4Pages(pagesArray, focusLastPage) {
+            pagesContainer.innerHTML = '';
+            if (pagesArray.length === 0) pagesArray = ['<p><br></p>'];
+
+            pagesArray.forEach((htmlContent, index) => {
+                const pageDiv = document.createElement('div');
+                pageDiv.className = 'a4-page';
+                pageDiv.innerHTML = `
+                    <div class="page-header"><span>Documento Editável</span><span>Página ${index + 1} de ${pagesArray.length}</span></div>
+                    <div class="page-content" contenteditable="true">${htmlContent}</div>
+                    <div class="page-footer">Gerado dinamicamente</div>
+                `;
+                pagesContainer.appendChild(pageDiv);
+            });
+
+            if (focusLastPage) {
+                const allPages = document.querySelectorAll('.page-content:not(#measure-container)');
+                if (allPages.length > 0) {
+                    const lastPage = allPages[allPages.length - 1];
+                    lastPage.focus();
+                    const range = document.createRange(); range.selectNodeContents(lastPage); range.collapse(false); 
+                    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+                    pagesContainer.scrollTop = pagesContainer.scrollHeight;
+                }
+            }
+        }
+
+        mdInput.addEventListener('input', () => updatePages(false));
+        pagesContainer.addEventListener('input', function(e) {
+            if (e.target && e.target.classList.contains('page-content')) {
+                syncVisualToMarkdown();
+                if (e.target.scrollHeight > MAX_CONTENT_HEIGHT) updatePages(true); 
+            }
+        });
+
+        mdInput.addEventListener('copy', function(e) {
+            const selection = window.getSelection();
+            if (selection.isCollapsed) return;
+
+            e.preventDefault(); // Impede a cópia padrão do navegador
+            
+            // Clona o que o usuário selecionou
+            const tempDiv = document.createElement('div');
+            tempDiv.appendChild(selection.getRangeAt(0).cloneContents());
+
+            // Varre a seleção e troca o link "Base64" pelo textão original
+            tempDiv.querySelectorAll('.b64-pill').forEach(pill => {
+                pill.parentNode.replaceChild(document.createTextNode(pill.getAttribute('data-base64')), pill);
+            });
+
+            // Limpa o HTML para entregar texto puro perfeito
+            let html = tempDiv.innerHTML;
+            html = html.replace(/<div><br><\/div>/gi, '\n')
+                     .replace(/<div[^>]*>/gi, '\n')
+                     .replace(/<\/div>/gi, '')
+                     .replace(/<br\s*\/?>/gi, '\n')
+                     .replace(/&nbsp;/gi, ' ');
+            
+            const txt = document.createElement('textarea');
+            txt.innerHTML = html;
+
+            // Coloca o texto real na área de transferência do usuário
+            e.clipboardData.setData('text/plain', txt.value);
+        });
+
+        let isSplit = true;
+        document.getElementById('toggle-view').addEventListener('click', (e) => {
+            isSplit = !isSplit;
+            document.getElementById('editor-pane').classList.toggle('hidden', !isSplit);
+            e.target.innerText = isSplit ? 'Modo Foco Visual' : 'Mostrar Código MD';
+        });
+
+        // Carrega o editor
+        const introText = `# Editor A4 Pro (Tabelas + Base64)\n\n**O que temos de novo:**\n\n1. **Toolbar Completa:** Voltou tudo.\n2. **Google Sheets Menu:** Clique em uma **📊 Tabela** e depois clique numa célula. Um menu flutuante escuro vai aparecer. Pinte fundos (🪣), mude a cor e o tamanho do texto, e adicione colunas (🗂️) ou linhas (📄).\n3. **A Pílula Base64:** Faça upload de uma **📁 Img (PC)**. O código do lado esquerdo não vai mais criar um "muro de texto". O Base64 vai virar um botão azul. Clique nele se quiser ver o código completo!\n4. Se quiser copiar o arquivo para colar em outro lugar, use o botão **📋 Copiar RAW MD** lá em cima!`;
+        mdInput.innerText = introText;
+        updatePages();
+    </script>
+</body>
+</html>
