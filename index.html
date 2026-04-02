@@ -369,7 +369,7 @@
             list-style-type: decimal;
         }
 
-        .page-content hr:not(.pb) {
+        .page-content hr:not(.manual-page-break) {
             border: 0;
             border-top: 2px solid #e2e8f0;
             margin: 2rem 0;
@@ -497,6 +497,17 @@
             pointer-events: none;
         }
 
+        /* A QUEBRA DE PÁGINA INVISÍVEL, SÓLIDA COMO ROCHA */
+        hr.manual-page-break {
+            border: none !important;
+            height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            visibility: hidden !important;
+            page-break-after: always !important; 
+            display: block;
+        }
+
         @media print {
             @page {
                 size: A4;
@@ -524,7 +535,7 @@
 
             .active-cell, .active-img { outline: none !important; }
             .header-content:focus, .footer-content:focus { border: none !important; }
-            hr.pb { display: none !important; }
+            hr.manual-page-break { display: none !important; }
         }
     </style>
 </head>
@@ -709,12 +720,13 @@
             }
         });
 
+        // CORREÇÃO: Ensina o Turndown a salvar nossa quebra de página perfeitamente no Markdown!
         turndownService.addRule('page-breaks', {
             filter: function (node) {
                 return node.nodeName === 'HR' && node.classList.contains('manual-page-break');
             },
             replacement: function (content, node) {
-                return '\n\n\n\n';
+                return '\n\n<hr class="manual-page-break" contenteditable="false">\n\n';
             }
         });
 
@@ -765,8 +777,9 @@
             saveState(true);
         }
 
+        // CORREÇÃO: Insere o <hr> invisível e um <br> pra descer o cursor
         function insertPageBreak() {
-            document.execCommand('insertHTML', false, '<hr class="manual-page-break" style="border:none;height:0;margin:0;visibility:hidden;display:block;page-break-after:always;"><p><br></p>');
+            document.execCommand('insertHTML', false, '<hr class="manual-page-break" contenteditable="false"><p><br></p>');
             syncAfterEdit();
             updatePages(true);
         }
@@ -944,46 +957,57 @@
             isSyncing = true;
 
             let rawMarkdown = getRawMarkdown();
-            const mdChunks = rawMarkdown.split(/<hr class=["']manual-page-break["']\s*\/?>/gi);
+            let rawHtml = marked.parse(rawMarkdown);
 
-            const pages = [];
-
-            mdChunks.forEach((chunkMD, index) => {
-                let rawHtml = marked.parse(chunkMD);
-                rawHtml = rawHtml.replace(/src="vault:([^"]+)"/g, (match, id) => {
-                    return 'src="' + (imageVault.get(id) || '') + '"';
-                });
-
-                measureContainer.innerHTML = rawHtml;
-                let currentPageContent = [];
-                let currentHeight = 0;
-
-                const childNodes = Array.from(measureContainer.childNodes);
-
-                if (childNodes.length === 0 && index > 0) {
-                    pages.push(currentPageContent.join(''));
-                    return;
-                }
-
-                childNodes.forEach(node => {
-                    if (node.nodeType === Node.TEXT_NODE && node.textContent.trim() === '') return;
-
-                    const nodeHeight = getOuterHeight(node);
-
-                    if (currentHeight + nodeHeight > MAX_CONTENT_HEIGHT && currentPageContent.length > 0) {
-                        pages.push(currentPageContent.join(''));
-                        currentPageContent = [];
-                        currentHeight = 0;
-                    }
-
-                    currentPageContent.push(node.nodeType === Node.TEXT_NODE ? node.textContent : node.outerHTML);
-                    currentHeight += nodeHeight;
-                });
-
-                if (currentPageContent.length > 0) {
-                    pages.push(currentPageContent.join(''));
-                }
+            rawHtml = rawHtml.replace(/src="vault:([^"]+)"/g, (match, id) => {
+                return 'src="' + (imageVault.get(id) || '') + '"';
             });
+
+            measureContainer.innerHTML = rawHtml;
+            const pages = [];
+            let currentPageContent = [];
+            let currentHeight = 0;
+
+            const childNodes = Array.from(measureContainer.childNodes);
+
+            childNodes.forEach(node => {
+                if (node.nodeType === Node.TEXT_NODE && node.textContent.trim() === '') return;
+
+                // CORREÇÃO MESTRA: O Raio-X Infalível para procurar a Quebra de Página
+                let isManualBreak = false;
+                if (node.nodeName === 'HR' && node.classList.contains('manual-page-break')) {
+                    isManualBreak = true;
+                } else if (node.nodeType === Node.ELEMENT_NODE && node.querySelector('hr.manual-page-break')) {
+                    isManualBreak = true;
+                }
+
+                if (isManualBreak) {
+                    if (currentPageContent.length > 0) {
+                        pages.push(currentPageContent.join(''));
+                    }
+                    currentPageContent = [];
+                    currentHeight = 0;
+                    
+                    // RE-INJETA A QUEBRA NO TOPO DA PÁGINA SEGUINTE PARA NÃO SUMIR DO CÓDIGO
+                    currentPageContent.push('<hr class="manual-page-break" contenteditable="false">');
+                    return; // Pula o elemento invisível, forçando a página nova sem dar over-height
+                }
+
+                const nodeHeight = getOuterHeight(node);
+
+                if (currentHeight + nodeHeight > MAX_CONTENT_HEIGHT && currentPageContent.length > 0) {
+                    pages.push(currentPageContent.join(''));
+                    currentPageContent = [];
+                    currentHeight = 0;
+                }
+
+                currentPageContent.push(node.nodeType === Node.TEXT_NODE ? node.textContent : node.outerHTML);
+                currentHeight += nodeHeight;
+            });
+
+            if (currentPageContent.length > 0) {
+                pages.push(currentPageContent.join(''));
+            }
 
             if (pages.length === 0) pages.push('<p><br></p>');
             renderA4Pages(pages, focusLastPage);
@@ -1064,7 +1088,6 @@
         });
 
         // --- INICIALIZAÇÃO ---
-        // --- INICIALIZAÇÃO ---
         const introText = `# Bem-vindo ao Editor A4 Pro 📝
 
 Este é um ambiente híbrido que une a velocidade do **Markdown** com o visual de um processador de textos profissional.
@@ -1073,8 +1096,8 @@ Este é um ambiente híbrido que une a velocidade do **Markdown** com o visual d
 
 ### 1. Paginação Perfeita e Cabeçalhos
 Tudo o que você digita é formatado em folhas A4 reais. 
-* **Cabeçalhos e Rodapés Globais:** Edite o topo ou o final desta página (onde está escrito "Meu Documento") e a alteração será aplicada em todas as folhas.
-* **Quebra de Página:** Precisa iniciar um novo capítulo? Clique em **📄 Quebra** na barra superior. O texto será empurrado para a próxima folha de forma limpa e invisível.
+* **Cabeçalhos e Rodapés Globais:** Edite o topo ou o final desta página (onde está escrito "Crie aqui um Cabeçalho") e a alteração será aplicada em todas as folhas.
+* **Quebra de Página:** Precisa iniciar um novo capítulo? Clique em **📄 Quebra** na barra superior. O texto será empurrado para a próxima folha de forma invisível.
 
 ### 2. Imagens com Alinhamento Mágico
 Faça upload de uma imagem do seu computador usando o botão **📁 Img (PC)**. 
@@ -1091,10 +1114,9 @@ Insira uma **📊 Tabela** e clique em qualquer célula dela. Um menu escuro apa
 ### 4. Nos Bastidores (O Cofre Base64)
 Se você olhar o código-fonte (clicando em "Mostrar Código MD"), verá que as imagens enviadas não criam um texto gigante e ilegível. Elas são transformadas em links azuis e discretos. 
 * Use o botão **📋 Copiar RAW MD** para exportar o código completo (com as imagens inclusas em Base64) para a sua área de transferência.
-* Errou algo? Use **Ctrl+Z** para voltar no tempo.
+* Errou algo? Use **Ctrl+Z** para voltar no tempo.`;
 
----
-*Apague este texto para começar seu documento. Para uma experiência mais imersiva, experimente o **Modo Foco Visual** lá no topo!*`; mdInput.innerHTML = formatMarkdownToEditor(introText);
+        mdInput.innerHTML = formatMarkdownToEditor(introText);
         updatePages();
         saveState(true);
     </script>
